@@ -1,11 +1,15 @@
-// File: public/script.js
-
 class StockScreenerApp {
     constructor() {
         this.dataUrl = 'data/screener_results.json';
         this.refreshInterval = 15 * 60 * 1000; // 15 minutes
         this.refreshTimer = null;
         this.isLoading = false;
+        this.allStocks = []; // Store all stocks for filtering
+        this.filters = {
+            market: 'all',
+            signal: 'all',
+            action: 'all'
+        };
         
         this.initializeApp();
     }
@@ -58,6 +62,15 @@ class StockScreenerApp {
             refreshBtn.addEventListener('click', () => this.refreshData());
         }
         
+        // Filter buttons
+        this.bindFilterListeners();
+        
+        // Clear filters button
+        const clearFiltersBtn = document.getElementById('clearFilters');
+        if (clearFiltersBtn) {
+            clearFiltersBtn.addEventListener('click', () => this.clearAllFilters());
+        }
+        
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
@@ -75,6 +88,140 @@ class StockScreenerApp {
             if (e.key === 'Escape') {
                 this.hideAbout();
             }
+        });
+    }
+    
+    bindFilterListeners() {
+        const filterButtons = document.querySelectorAll('.filter-btn');
+        filterButtons.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const filterType = e.target.dataset.filter;
+                const filterValue = e.target.dataset.value;
+                this.setFilter(filterType, filterValue, e.target);
+            });
+        });
+    }
+    
+    setFilter(filterType, filterValue, button) {
+        // Update filter state
+        this.filters[filterType] = filterValue;
+        
+        // Update button states
+        const filterGroup = button.parentElement;
+        filterGroup.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        button.classList.add('active');
+        
+        // Apply filters
+        this.applyFilters();
+    }
+    
+    clearAllFilters() {
+        // Reset filters
+        this.filters = {
+            market: 'all',
+            signal: 'all',
+            action: 'all'
+        };
+        
+        // Update button states
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.classList.remove('active');
+            if (btn.dataset.value === 'all') {
+                btn.classList.add('active');
+            }
+        });
+        
+        // Apply filters
+        this.applyFilters();
+    }
+    
+    applyFilters() {
+        if (!this.allStocks || this.allStocks.length === 0) {
+            return;
+        }
+        
+        let filteredStocks = this.allStocks.filter(stock => {
+            // Market filter
+            if (this.filters.market !== 'all' && stock.market !== this.filters.market) {
+                return false;
+            }
+            
+            // Signal type filter
+            if (this.filters.signal !== 'all') {
+                const hasSignal1 = stock.signals.signal1.entry || stock.signals.signal1.exit;
+                const hasSignal2 = stock.signals.signal2.entry;
+                
+                if (this.filters.signal === 'signal1' && !hasSignal1) {
+                    return false;
+                }
+                if (this.filters.signal === 'signal2' && !hasSignal2) {
+                    return false;
+                }
+            }
+            
+            // Action filter
+            if (this.filters.action !== 'all') {
+                const hasEntry = stock.signals.signal1.entry || stock.signals.signal2.entry;
+                const hasExit = stock.signals.signal1.exit;
+                
+                if (this.filters.action === 'entry' && !hasEntry) {
+                    return false;
+                }
+                if (this.filters.action === 'exit' && !hasExit) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        // Update filter count
+        this.updateFilterCount(filteredStocks.length);
+        
+        // Render filtered stocks
+        this.renderFilteredStocks(filteredStocks);
+    }
+    
+    updateFilterCount(count) {
+        const filterCount = document.getElementById('filterCount');
+        const totalCount = this.allStocks.length;
+        
+        if (filterCount) {
+            if (count === totalCount) {
+                filterCount.textContent = `Showing all ${count} results`;
+            } else {
+                filterCount.textContent = `Showing ${count} of ${totalCount} results`;
+            }
+        }
+    }
+    
+    renderFilteredStocks(stocks) {
+        const stocksList = document.getElementById('stocksList');
+        const emptyState = document.getElementById('emptyState');
+        const noFilterResults = document.getElementById('noFilterResults');
+        
+        if (!stocksList) return;
+        
+        if (stocks.length === 0) {
+            stocksList.innerHTML = '';
+            if (emptyState) emptyState.classList.add('hidden');
+            if (noFilterResults) noFilterResults.classList.remove('hidden');
+            return;
+        }
+        
+        if (emptyState) emptyState.classList.add('hidden');
+        if (noFilterResults) noFilterResults.classList.add('hidden');
+        
+        // Generate stock cards
+        stocksList.innerHTML = stocks.map(stock => this.createStockCard(stock)).join('');
+        
+        // Add animation to cards
+        const cards = stocksList.querySelectorAll('.stock-card');
+        cards.forEach((card, index) => {
+            card.style.animationDelay = `${index * 0.1}s`;
+            card.classList.add('slide-up');
         });
     }
     
@@ -133,11 +280,19 @@ class StockScreenerApp {
                 throw new Error('Invalid data format received');
             }
             
+            // Store all stocks for filtering
+            this.allStocks = data.filtered_stocks;
+            
             // Render statistics
             this.renderStatistics(data.metadata, data);
             
-            // Render stock results
-            this.renderStocks(data.filtered_stocks);
+            // Show filters if we have data
+            if (this.allStocks.length > 0) {
+                this.showFilters();
+            }
+            
+            // Apply current filters to render stocks
+            this.applyFilters();
             
             // Show appropriate sections
             this.showResults();
@@ -179,35 +334,6 @@ class StockScreenerApp {
             elements.lastUpdated.textContent = this.formatDateTime(date);
             elements.lastUpdated.title = date.toLocaleString();
         }
-    }
-    
-    renderStocks(stocks) {
-        const stocksList = document.getElementById('stocksList');
-        const emptyState = document.getElementById('emptyState');
-        
-        if (!stocksList) return;
-        
-        if (!stocks || stocks.length === 0) {
-            stocksList.innerHTML = '';
-            if (emptyState) {
-                emptyState.classList.remove('hidden');
-            }
-            return;
-        }
-        
-        if (emptyState) {
-            emptyState.classList.add('hidden');
-        }
-        
-        // Generate stock cards
-        stocksList.innerHTML = stocks.map(stock => this.createStockCard(stock)).join('');
-        
-        // Add animation to cards
-        const cards = stocksList.querySelectorAll('.stock-card');
-        cards.forEach((card, index) => {
-            card.style.animationDelay = `${index * 0.1}s`;
-            card.classList.add('slide-up');
-        });
     }
     
     createStockCard(stock) {
@@ -425,6 +551,13 @@ class StockScreenerApp {
         }
     }
     
+    showFilters() {
+        const filters = document.getElementById('filters');
+        if (filters) {
+            filters.classList.remove('hidden');
+        }
+    }
+    
     showResults() {
         const stats = document.getElementById('stats');
         const results = document.getElementById('results');
@@ -444,6 +577,8 @@ class StockScreenerApp {
         const stats = document.getElementById('stats');
         const results = document.getElementById('results');
         const emptyState = document.getElementById('emptyState');
+        const filters = document.getElementById('filters');
+        const noFilterResults = document.getElementById('noFilterResults');
         
         if (stats) {
             stats.classList.add('hidden');
@@ -455,6 +590,14 @@ class StockScreenerApp {
         
         if (emptyState) {
             emptyState.classList.add('hidden');
+        }
+        
+        if (filters) {
+            filters.classList.add('hidden');
+        }
+        
+        if (noFilterResults) {
+            noFilterResults.classList.add('hidden');
         }
     }
     
@@ -544,3 +687,6 @@ window.addEventListener('offline', () => {
         window.stockScreenerApp.showError('You are currently offline. Data will refresh when connection is restored.');
     }
 });
+    </script>
+</body>
+</html>
