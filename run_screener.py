@@ -191,7 +191,7 @@ class TurtleTradingScreener:
         volume_avg = analysis['volume_20_avg']
         
         # Determine market and apply appropriate filters
-        is_krx = ticker.endswith('.KS')
+        is_krx = ticker.endswith('.KS') or ticker.endswith('.KQ')
         
         if is_krx:
             # KRX filters
