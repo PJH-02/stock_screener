@@ -79,8 +79,8 @@ class TurtleTradingScreener:
         us_tickers = []
         try:
             logger.info("Fetching US tickers (NASDAQ, S&P500)")
-            sp500_df = fdr.STockListing('S&P500')
-            nasdaq_df = fdr.STockListing('NASDAQ')
+            sp500_df = fdr.StockListing('S&P500')
+            nasdaq_df = fdr.StockListing('NASDAQ')
             #Clean up for yfinance compatibility, e.g. BRK.B -> BRK-B
             sp500_df['Symbol'] = sp500_df['Symbol'].str.replace('.','-', regex=False)
             nasdaq_df['Symbol'] = nasdaq_df['Symbol'].str.replace('.','-', regex=False)
