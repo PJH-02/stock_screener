@@ -11,7 +11,6 @@ import logging
 from pykrx import stock
 import FinanceDataReader as fdr
 
-
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,15 +33,14 @@ class TurtleTradingScreener:
         self.min_price_usd = 5.0          # Minimum price for US stocks
         self.min_price_krw = 5000.0       # Minimum price for KRX stocks
 
-        #krx name changer
+        # KRX name changer
         self.krx_ticker_map = {}
         
     def get_ticker_universe(self) -> Tuple[List[str], List[str]]:
         """
         Retrieve ticker universes for both KRX and US markets.
-        FRX: fetch all tickers from KOSPI/KOSDAQ
+        KRX: fetch all tickers from KOSPI/KOSDAQ
         US: fetch S&P 500/NASDAQ ticker
-        The main processing loop is responsible for filtering by liquidity and price.
         Returns: (krx_tickers, us_tickers)
         """
         logger.info("Building ticker universe from public sources...")
@@ -54,17 +52,21 @@ class TurtleTradingScreener:
             # Fetching all tickers from KOSPI and KOSDAQ
             kospi_tickers_raw = stock.get_market_ticker_list(market="KOSPI")
             kosdaq_tickers_raw = stock.get_market_ticker_list(market="KOSDAQ")
+            
+            # 수정: KOSDAQ 티커 생성 시 올바른 리스트 사용
             kospi_tickers = [f"{ticker}.KS" for ticker in kospi_tickers_raw]
-            kosdaq_tickers = [f"{ticker}.KQ" for ticker in kospi_tickers_raw]
+            kosdaq_tickers = [f"{ticker}.KQ" for ticker in kosdaq_tickers_raw]  # 수정된 부분
             krx_tickers = kospi_tickers + kosdaq_tickers
             logger.info(f"Found {len(krx_tickers)} total KRX tickers.")
 
-            # krx company name mapping by ticker list
+            # KRX company name mapping by ticker list
             logger.info("Building KRX ticker-to-name map...")
             all_krx_tickers_raw = kospi_tickers_raw + kosdaq_tickers_raw
-            for ticker in all_krx_tickers_raw:
-                suffix = ".KS" if ticker in kospi_tickers_raw else ".KQ"
-                full_ticker = f"{ticker}{suffix}"
+            for ticker in kospi_tickers_raw:
+                full_ticker = f"{ticker}.KS"
+                self.krx_ticker_map[full_ticker] = stock.get_market_ticker_name(ticker)
+            for ticker in kosdaq_tickers_raw:
+                full_ticker = f"{ticker}.KQ"
                 self.krx_ticker_map[full_ticker] = stock.get_market_ticker_name(ticker)
 
             logger.info(f"Found {len(krx_tickers)} total KRX tickers and mapped their names.")
@@ -81,10 +83,12 @@ class TurtleTradingScreener:
             logger.info("Fetching US tickers (NASDAQ, S&P500)")
             sp500_df = fdr.StockListing('S&P500')
             nasdaq_df = fdr.StockListing('NASDAQ')
-            #Clean up for yfinance compatibility, e.g. BRK.B -> BRK-B
-            sp500_df['Symbol'] = sp500_df['Symbol'].str.replace('.','-', regex=False)
-            nasdaq_df['Symbol'] = nasdaq_df['Symbol'].str.replace('.','-', regex=False)
+            # Clean up for yfinance compatibility, e.g. BRK.B -> BRK-B
+            sp500_df['Symbol'] = sp500_df['Symbol'].str.replace('.', '-', regex=False)
+            nasdaq_df['Symbol'] = nasdaq_df['Symbol'].str.replace('.', '-', regex=False)
             us_tickers = sp500_df['Symbol'].tolist() + nasdaq_df['Symbol'].tolist()
+            # Remove duplicates
+            us_tickers = list(set(us_tickers))
             logger.info(f"Found {len(us_tickers)} total US tickers")
         except ImportError:
             logger.error("FinanceDataReader is not installed. Please install it using `pip install finance-datareader` to fetch US tickers.")
@@ -106,7 +110,10 @@ class TurtleTradingScreener:
         if len(data) < self.signal2_entry_period + 1:
             logger.warning(f"Insufficient data for turtle signals: {ticker}")
             return None
-            
+        
+        # 수정: .copy()를 사용하여 SettingWithCopyWarning 방지
+        data = data.copy()
+        
         # Calculate rolling highs and lows for different periods
         data['High_20'] = data['High'].rolling(window=self.signal1_entry_period).max().shift(1)
         data['Low_20'] = data['Low'].rolling(window=self.signal1_entry_period).min().shift(1)
@@ -118,7 +125,7 @@ class TurtleTradingScreener:
         # Calculate 20-day average volume for liquidity filter
         data['Volume_20_avg'] = data['Volume'].rolling(window=20).mean()
         
-        # Get current values
+        # Get current values (마지막 완성된 거래일 데이터 사용)
         current_data = data.iloc[-1]
         current_price = float(current_data['Close'])
         current_volume_avg = float(current_data['Volume_20_avg']) if not pd.isna(current_data['Volume_20_avg']) else 0
@@ -214,85 +221,125 @@ class TurtleTradingScreener:
         
         return has_signal
     
+    def download_data_safe(self, tickers: List[str]) -> Dict[str, pd.DataFrame]:
+        """
+        안전하게 데이터를 다운로드하여 개별 DataFrame으로 반환
+        """
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=200)
+        
+        # 수정: interval을 '1d'로 명시하여 일별 데이터만 가져오기
+        try:
+            if len(tickers) == 1:
+                # 단일 티커의 경우
+                data = yf.download(tickers[0], start=start_date, end=end_date, 
+                                 interval='1d', auto_adjust=True, progress=False)
+                if not data.empty:
+                    return {tickers[0]: data}
+                else:
+                    return {}
+            else:
+                # 다중 티커의 경우
+                all_data = yf.download(tickers, start=start_date, end=end_date, 
+                                     interval='1d', auto_adjust=True, 
+                                     group_by='ticker', progress=False)
+                
+                result = {}
+                for ticker in tickers:
+                    try:
+                        if len(tickers) > 1:
+                            # MultiIndex 컬럼에서 데이터 추출
+                            single_data = all_data[ticker].copy()
+                        else:
+                            single_data = all_data.copy()
+                        
+                        if not single_data.empty and len(single_data) >= 60:
+                            result[ticker] = single_data
+                    except (KeyError, IndexError):
+                        logger.warning(f"No data available for {ticker}")
+                        continue
+                
+                return result
+        except Exception as e:
+            logger.error(f"Error downloading data for batch: {str(e)}")
+            return {}
+    
     def run_screening(self) -> Dict[str, Any]:
-        """Run the complete Turtle Trading screening process with batch downloading"""
+        """Run the complete Turtle Trading screening process with improved data handling"""
         start_time = time.time()
         logger.info("Starting Turtle Trading screening process")
         
         # Get ticker universes
         krx_tickers, us_tickers = self.get_ticker_universe()
-        krx_tickers_no_suffix = [t.replace('.KS', '').replace('.KQ', '') for t in krx_tickers]
-        all_tickers = krx_tickers_no_suffix + us_tickers
         
-        if not all_tickers:
+        if not krx_tickers and not us_tickers:
             logger.error("No tickers to process")
             return self._create_empty_results()
         
-        # Process each ticker
-        logger.info(f"Fetching data for {len(all_tickers)} tickers in a single batch...")
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=200) 
-        all_data = yf.download(all_tickers, start=start_date, end=end_date, group_by='ticker', auto_adjust=True)
-        logger.info("Batch data download complete.")
+        all_tickers = krx_tickers + us_tickers
         
+        # 수정: 배치 크기를 줄여서 안정성 향상
+        batch_size = 50
         filtered_stocks = []
         errors = []
         krx_processed = 0
         us_processed = 0
-
-        for ticker in all_tickers:
-            try:
-                # 개별 티커 데이터를 거대한 데이터프레임에서 선택합니다.
-                # 컬럼이 MultiIndex이므로, ticker를 첫 번째 레벨로 사용합니다.
-                single_ticker_data = all_data[ticker]
-                
-                # 데이터가 비어있거나 부족한 경우 건너뜁니다.
-                if single_ticker_data.empty or len(single_ticker_data) < 60:
-                    continue
-
-                # calculate_turtle_signals 함수로 분석을 보냅니다.
-                # .KS를 다시 붙여서 KRX 종목임을 명시해줍니다.
-                is_krx = ticker in krx_tickers_no_suffix
-                if is_krx:
-                    # self.krx_ticker_map에서 .KS와 .KQ를 모두 확인하여 올바른 키를 찾습니다.
-                    if f"{ticker}.KS" in self.krx_ticker_map:
-                        ticker_with_suffix = f"{ticker}.KS"
-                    else:
-                        ticker_with_suffix = f"{ticker}.KQ"
-                else:
-                    ticker_with_suffix = ticker
-                
-                analysis = self.calculate_turtle_signals(single_ticker_data, ticker_with_suffix)
-                
-                if analysis is None or not self.passes_filters(analysis):
-                    continue
-                
-                #최종 결과용 name 추    
-                stock_name = self.krx_ticker_map.get(ticker_with_suffix, ticker_with_suffix)
-                
-                # 최종 결과 포맷팅
-                result = {
-                    'ticker': ticker_with_suffix,
-                    'name': stock_name,  # <-- 회사명 필드 추가!
-                    'market': 'KRX' if is_krx else 'US',
-                    'current_price': round(analysis['current_price'], 2),
-                    'volume_20_avg': analysis['volume_20_avg'],
-                    'signals': analysis['signals'],
-                    'breakout_levels': analysis['breakout_levels']
-                }
-                
-                if result:
+        
+        logger.info(f"Processing {len(all_tickers)} tickers in batches of {batch_size}")
+        
+        for i in range(0, len(all_tickers), batch_size):
+            batch_tickers = all_tickers[i:i + batch_size]
+            logger.info(f"Processing batch {i//batch_size + 1}: {len(batch_tickers)} tickers")
+            
+            # 배치 데이터 다운로드
+            batch_data = self.download_data_safe(batch_tickers)
+            
+            for ticker in batch_tickers:
+                try:
+                    if ticker not in batch_data:
+                        errors.append(ticker)
+                        continue
+                    
+                    single_ticker_data = batch_data[ticker]
+                    
+                    # 데이터가 부족한 경우 건너뛰기
+                    if single_ticker_data.empty or len(single_ticker_data) < 60:
+                        continue
+                    
+                    # 터틀 신호 계산
+                    analysis = self.calculate_turtle_signals(single_ticker_data, ticker)
+                    
+                    if analysis is None or not self.passes_filters(analysis):
+                        continue
+                    
+                    # 회사명 가져오기
+                    stock_name = self.krx_ticker_map.get(ticker, ticker)
+                    
+                    # 최종 결과 포맷팅
+                    result = {
+                        'ticker': ticker,
+                        'name': stock_name,
+                        'market': 'KRX' if ticker.endswith(('.KS', '.KQ')) else 'US',
+                        'current_price': round(analysis['current_price'], 2),
+                        'volume_20_avg': analysis['volume_20_avg'],
+                        'signals': analysis['signals'],
+                        'breakout_levels': analysis['breakout_levels']
+                    }
+                    
                     filtered_stocks.append(result)
                     if result['market'] == 'KRX':
                         krx_processed += 1
                     else:
                         us_processed += 1
-
-            except Exception as e:
-                # 특정 티커 처리 중 오류가 발생하더라도 전체 프로세스는 계속됩니다.
-                logger.error(f"Error processing {ticker} from batch data: {str(e)}")
-                errors.append(ticker)
-      
+                        
+                except Exception as e:
+                    logger.error(f"Error processing {ticker}: {str(e)}")
+                    errors.append(ticker)
+            
+            # 배치 간 잠시 대기 (API 제한 방지)
+            if i + batch_size < len(all_tickers):
+                time.sleep(1)
+        
         # Calculate processing time
         processing_time = time.time() - start_time
         
@@ -317,7 +364,7 @@ class TurtleTradingScreener:
                 'krx_with_signals': krx_processed,
                 'us_with_signals': us_processed,
                 'processing_time_seconds': round(processing_time, 2),
-                'errors': errors,
+                'errors_count': len(errors),
                 'success_rate': round((len(all_tickers) - len(errors)) / len(all_tickers) * 100, 1) if all_tickers else 0
             },
             'signal_breakdown': {
@@ -328,6 +375,7 @@ class TurtleTradingScreener:
         }
         
         logger.info(f"Screening complete: {len(filtered_stocks)} stocks with Turtle signals")
+        logger.info(f"KRX signals: {krx_processed}, US signals: {us_processed}")
         logger.info(f"Signal 1 (20-day): {len(signal1_stocks)}, Signal 2 (55-day): {len(signal2_stocks)}")
         return results
     
@@ -343,7 +391,7 @@ class TurtleTradingScreener:
                 'krx_with_signals': 0,
                 'us_with_signals': 0,
                 'processing_time_seconds': 0,
-                'errors': [],
+                'errors_count': 0,
                 'success_rate': 0
             },
             'signal_breakdown': {
@@ -360,8 +408,8 @@ class TurtleTradingScreener:
             os.makedirs(os.path.dirname(self.output_file), exist_ok=True)
             
             # Save results
-            with open(self.output_file, 'w') as f:
-                json.dump(results, f, indent=2)
+            with open(self.output_file, 'w', encoding='utf-8') as f:
+                json.dump(results, f, indent=2, ensure_ascii=False)
             
             logger.info(f"Results saved to {self.output_file}")
             return True
@@ -385,7 +433,11 @@ def main():
         total_signals = results['metadata']['total_signals_found']
         signal1_count = results['signal_breakdown']['signal1_count']
         signal2_count = results['signal_breakdown']['signal2_count']
-        print(f"Found {total_signals} stocks with signals (Signal1: {signal1_count}, Signal2: {signal2_count})")
+        krx_signals = results['metadata']['krx_with_signals']
+        us_signals = results['metadata']['us_with_signals']
+        print(f"Found {total_signals} stocks with signals")
+        print(f"KRX: {krx_signals}, US: {us_signals}")
+        print(f"Signal1: {signal1_count}, Signal2: {signal2_count}")
     else:
         logger.error("Turtle Trading screening failed")
         exit(1)
