@@ -3,7 +3,7 @@
 class StockScreenerApp {
     constructor() {
         this.dataUrl = 'data/screener_results.json';
-        this.refreshInterval = 5 * 60 * 1000; // 5 minutes
+        this.refreshInterval = 15 * 60 * 1000; // 15 minutes
         this.refreshTimer = null;
         this.isLoading = false;
         
