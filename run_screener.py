@@ -253,9 +253,15 @@ class TurtleTradingScreener:
                 # calculate_turtle_signals 함수로 분석을 보냅니다.
                 # .KS를 다시 붙여서 KRX 종목임을 명시해줍니다.
                 is_krx = ticker in krx_tickers_no_suffix
-                ticker_with_suffix = self.krx_ticker_map.get(f"{ticker}.KS", self.krx_ticker_map.get(f"{ticker}.KQ"))
-                if not ticker_with_suffix: # .KS도 .KQ도 아니면 US 종목으로 간주
+                if is_krx:
+                    # self.krx_ticker_map에서 .KS와 .KQ를 모두 확인하여 올바른 키를 찾습니다.
+                    if f"{ticker}.KS" in self.krx_ticker_map:
+                        ticker_with_suffix = f"{ticker}.KS"
+                    else:
+                        ticker_with_suffix = f"{ticker}.KQ"
+                else:
                     ticker_with_suffix = ticker
+                
                 analysis = self.calculate_turtle_signals(single_ticker_data, ticker_with_suffix)
                 
                 if analysis is None or not self.passes_filters(analysis):
