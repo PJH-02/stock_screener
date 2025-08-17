@@ -221,8 +221,8 @@ class TurtleTradingScreener:
         
         # Get ticker universes
         krx_tickers, us_tickers = self.get_ticker_universe()
-        krx_tickers_fix = [t.replace('.KS', '') for t in krx_tickers]
-        all_tickers = krx_tickers_fix + us_tickers
+        krx_tickers_no_suffix = [t.replace('.KS', '').replace('.KQ', '') for t in krx_tickers]
+        all_tickers = krx_tickers_no_suffix + us_tickers
         
         if not all_tickers:
             logger.error("No tickers to process")
@@ -250,14 +250,12 @@ class TurtleTradingScreener:
                 if single_ticker_data.empty or len(single_ticker_data) < 60:
                     continue
 
-                # yfinance.download는 'Adj Close'를 사용하지 않으므로 컬럼 이름을 맞춰줍니다.
-                # auto_adjust=True를 사용하면 Close가 이미 수정주가입니다.
-                # 기존 함수와 호환성을 위해 컬럼 이름을 복사해줍니다.
-                # (기존 calculate_turtle_signals 함수가 'High', 'Low', 'Close' 등을 사용)
-
                 # calculate_turtle_signals 함수로 분석을 보냅니다.
                 # .KS를 다시 붙여서 KRX 종목임을 명시해줍니다.
-                ticker_with_suffix = f"{ticker}.KS" if ticker in krx_tickers_no_suffix else ticker
+                is_krx = ticker in krx_tickers_no_suffix
+                ticker_with_suffix = self.krx_ticker_map.get(f"{ticker}.KS", self.krx_ticker_map.get(f"{ticker}.KQ"))
+                if not ticker_with_suffix: # .KS도 .KQ도 아니면 US 종목으로 간주
+                    ticker_with_suffix = ticker
                 analysis = self.calculate_turtle_signals(single_ticker_data, ticker_with_suffix)
                 
                 if analysis is None or not self.passes_filters(analysis):
@@ -270,13 +268,12 @@ class TurtleTradingScreener:
                 result = {
                     'ticker': ticker_with_suffix,
                     'name': stock_name,  # <-- 회사명 필드 추가!
-                    'market': 'KRX' if ticker in krx_tickers_no_suffix else 'US',
+                    'market': 'KRX' if is_krx else 'US',
                     'current_price': round(analysis['current_price'], 2),
                     'volume_20_avg': analysis['volume_20_avg'],
                     'signals': analysis['signals'],
                     'breakout_levels': analysis['breakout_levels']
                 }
-
                 
                 if result:
                     filtered_stocks.append(result)
