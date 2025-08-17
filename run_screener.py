@@ -33,6 +33,9 @@ class TurtleTradingScreener:
         # Price filter
         self.min_price_usd = 5.0          # Minimum price for US stocks
         self.min_price_krw = 5000.0       # Minimum price for KRX stocks
+
+        #krx name changer
+        self.krx_ticker_map = {}
         
     def get_ticker_universe(self) -> Tuple[List[str], List[str]]:
         """
@@ -49,10 +52,22 @@ class TurtleTradingScreener:
         try:
             logger.info("Fetching KRX tickers (KOSPI, KOSDAQ)...")
             # Fetching all tickers from KOSPI and KOSDAQ
-            kospi_tickers = [f"{ticker}.KS" for ticker in stock.get_market_ticker_list(market="KOSPI")]
-            kosdaq_tickers = [f"{ticker}.KQ" for ticker in stock.get_market_ticker_list(market="KOSDAQ")]
+            kospi_tickers_raw = stock.get_market_ticker_list(market="KOSPI")
+            kosdaq_tickers_raw = stock.get_market_ticker_list(market="KOSDAQ")
+            kospi_tickers = [f"{ticker}.KS" for ticker in kospi_tickers_raw]
+            kosdaq_tickers = [f"{ticker}.KQ" for ticker in kospi_tickers_raw]
             krx_tickers = kospi_tickers + kosdaq_tickers
             logger.info(f"Found {len(krx_tickers)} total KRX tickers.")
+
+            # krx company name mapping by ticker list
+            logger.info("Building KRX ticker-to-name map...")
+            all_krx_tickers_raw = kospi_tickers_raw + kosdaq_tickers_raw
+            for ticker in all_krx_tickers_raw:
+                suffix = ".KS" if ticker in kospi_tickers_raw else ".KQ"
+                full_ticker = f"{ticker}{suffix}"
+                self.krx_ticker_map[full_ticker] = stock.get_market_ticker_name(ticker)
+
+            logger.info(f"Found {len(krx_tickers)} total KRX tickers and mapped their names.")
         except ImportError:
             logger.error("`pykrx` library is not installed. Please install it using `pip install pykrx` to fetch KRX tickers.")
             krx_tickers = []
@@ -80,31 +95,6 @@ class TurtleTradingScreener:
 
         logger.info(f"Universe: {len(krx_tickers)} KRX tickers, {len(us_tickers)} US tickers")
         return krx_tickers, us_tickers
-    
-    def fetch_stock_data(self, ticker: str, retries: int = 3) -> Optional[pd.DataFrame]:
-        """Fetch stock data with retry logic"""
-        for attempt in range(retries):
-            try:
-                stock = yf.Ticker(ticker)
-                # Fetch extended data to ensure we have enough for 55-day calculations
-                end_date = datetime.now()
-                start_date = end_date - timedelta(days=200)  # Buffer for weekends/holidays
-                
-                data = stock.history(start=start_date, end=end_date, interval='1d')
-                
-                if data.empty or len(data) < 60:  # Need at least 60 days for calculations
-                    logger.warning(f"Insufficient data for {ticker}: {len(data) if not data.empty else 0} days")
-                    return None
-                
-                return data
-                
-            except Exception as e:
-                logger.warning(f"Attempt {attempt + 1} failed for {ticker}: {str(e)}")
-                if attempt < retries - 1:
-                    time.sleep(1)  # Brief pause before retry
-                
-        logger.error(f"Failed to fetch data for {ticker} after {retries} attempts")
-        return None
     
     def calculate_turtle_signals(self, data: pd.DataFrame, ticker: str) -> Dict[str, Any]:
         """
@@ -224,67 +214,82 @@ class TurtleTradingScreener:
         
         return has_signal
     
-    def process_ticker(self, ticker: str) -> Optional[Dict[str, Any]]:
-        """Process a single ticker for Turtle Trading signals"""
-        logger.info(f"Processing {ticker}")
-        
-        # Fetch data
-        data = self.fetch_stock_data(ticker)
-        if data is None:
-            return None
-        
-        # Calculate turtle signals
-        analysis = self.calculate_turtle_signals(data, ticker)
-        if analysis is None:
-            return None
-        
-        # Check filters
-        if not self.passes_filters(analysis):
-            return None
-        
-        # Format output for frontend
-        return {
-            'ticker': ticker,
-            'market': 'KRX' if ticker.endswith('.KS') else 'US',
-            'current_price': round(analysis['current_price'], 2),
-            'volume_20_avg': analysis['volume_20_avg'],
-            'signals': analysis['signals'],
-            'breakout_levels': analysis['breakout_levels']
-        }
-    
     def run_screening(self) -> Dict[str, Any]:
-        """Run the complete Turtle Trading screening process"""
+        """Run the complete Turtle Trading screening process with batch downloading"""
         start_time = time.time()
         logger.info("Starting Turtle Trading screening process")
         
         # Get ticker universes
         krx_tickers, us_tickers = self.get_ticker_universe()
-        all_tickers = krx_tickers + us_tickers
+        krx_tickers_fix = [t.replace('.KS', '') for t in krx_tickers]
+        all_tickers = krx_tickers_fix + us_tickers
         
         if not all_tickers:
             logger.error("No tickers to process")
             return self._create_empty_results()
         
         # Process each ticker
+        logger.info(f"Fetching data for {len(all_tickers)} tickers in a single batch...")
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=200) 
+        all_data = yf.download(all_tickers, start=start_date, end=end_date, group_by='ticker', auto_adjust=True)
+        logger.info("Batch data download complete.")
+        
         filtered_stocks = []
         errors = []
         krx_processed = 0
         us_processed = 0
-        
+
         for ticker in all_tickers:
             try:
-                result = self.process_ticker(ticker)
+                # 개별 티커 데이터를 거대한 데이터프레임에서 선택합니다.
+                # 컬럼이 MultiIndex이므로, ticker를 첫 번째 레벨로 사용합니다.
+                single_ticker_data = all_data[ticker]
+                
+                # 데이터가 비어있거나 부족한 경우 건너뜁니다.
+                if single_ticker_data.empty or len(single_ticker_data) < 60:
+                    continue
+
+                # yfinance.download는 'Adj Close'를 사용하지 않으므로 컬럼 이름을 맞춰줍니다.
+                # auto_adjust=True를 사용하면 Close가 이미 수정주가입니다.
+                # 기존 함수와 호환성을 위해 컬럼 이름을 복사해줍니다.
+                # (기존 calculate_turtle_signals 함수가 'High', 'Low', 'Close' 등을 사용)
+
+                # calculate_turtle_signals 함수로 분석을 보냅니다.
+                # .KS를 다시 붙여서 KRX 종목임을 명시해줍니다.
+                ticker_with_suffix = f"{ticker}.KS" if ticker in krx_tickers_no_suffix else ticker
+                analysis = self.calculate_turtle_signals(single_ticker_data, ticker_with_suffix)
+                
+                if analysis is None or not self.passes_filters(analysis):
+                    continue
+                
+                #최종 결과용 name 추    
+                stock_name = self.krx_ticker_map.get(ticker_with_suffix, ticker_with_suffix)
+                
+                # 최종 결과 포맷팅
+                result = {
+                    'ticker': ticker_with_suffix,
+                    'name': stock_name,  # <-- 회사명 필드 추가!
+                    'market': 'KRX' if ticker in krx_tickers_no_suffix else 'US',
+                    'current_price': round(analysis['current_price'], 2),
+                    'volume_20_avg': analysis['volume_20_avg'],
+                    'signals': analysis['signals'],
+                    'breakout_levels': analysis['breakout_levels']
+                }
+
+                
                 if result:
                     filtered_stocks.append(result)
                     if result['market'] == 'KRX':
                         krx_processed += 1
                     else:
                         us_processed += 1
-                        
+
             except Exception as e:
-                logger.error(f"Error processing {ticker}: {str(e)}")
+                # 특정 티커 처리 중 오류가 발생하더라도 전체 프로세스는 계속됩니다.
+                logger.error(f"Error processing {ticker} from batch data: {str(e)}")
                 errors.append(ticker)
-        
+      
         # Calculate processing time
         processing_time = time.time() - start_time
         
