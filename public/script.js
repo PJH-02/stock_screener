@@ -262,7 +262,8 @@ class StockScreenerApp {
             <div class="stock-card">
                 <div class="stock-header">
                     <div class="stock-ticker">
-                        ${this.escapeHtml(stock.ticker)}
+                        ${this.escapeHtml(stock.name)}
+                        <span class="ticker-code">(${this.escapeHtml(stock.ticker)})</span>
                         ${marketBadge}
                     </div>
                     <div class="stock-price">${this.formatPrice(stock.current_price, stock.market)}</div>
