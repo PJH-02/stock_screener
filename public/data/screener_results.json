@@ -1,0 +1,131 @@
+{
+  "metadata": {
+    "last_updated": "2025-08-12T19:30:00Z",
+    "total_analyzed": 67,
+    "total_signals_found": 4,
+    "krx_analyzed": 25,
+    "us_analyzed": 42,
+    "krx_with_signals": 2,
+    "us_with_signals": 2,
+    "processing_time_seconds": 18.45,
+    "errors": [],
+    "success_rate": 100.0
+  },
+  "signal_breakdown": {
+    "signal1_count": 2,
+    "signal2_count": 2
+  },
+  "filtered_stocks": [
+    {
+      "ticker": "005930.KS",
+      "market": "KRX",
+      "current_price": 72500,
+      "volume_20_avg": 15750000,
+      "signals": {
+        "signal1": {
+          "entry": {
+            "type": "BUY",
+            "price": 72500,
+            "breakout_level": 71800,
+            "date": "2025-08-12",
+            "exit_level": 68200
+          },
+          "exit": null
+        },
+        "signal2": {
+          "entry": null
+        }
+      },
+      "breakout_levels": {
+        "high_20": 71800,
+        "low_20": 66500,
+        "high_55": 75200,
+        "low_10": 68200,
+        "low_20_exit": 66500
+      }
+    },
+    {
+      "ticker": "AAPL",
+      "market": "US",
+      "current_price": 185.25,
+      "volume_20_avg": 52750000,
+      "signals": {
+        "signal1": {
+          "entry": null,
+          "exit": null
+        },
+        "signal2": {
+          "entry": {
+            "type": "BUY",
+            "price": 185.25,
+            "breakout_level": 183.50,
+            "date": "2025-08-12",
+            "exit_level": 175.80
+          }
+        }
+      },
+      "breakout_levels": {
+        "high_20": 182.15,
+        "low_20": 175.45,
+        "high_55": 183.50,
+        "low_10": 178.20,
+        "low_20_exit": 175.80
+      }
+    },
+    {
+      "ticker": "035420.KS",
+      "market": "KRX",
+      "current_price": 198500,
+      "volume_20_avg": 4250000,
+      "signals": {
+        "signal1": {
+          "entry": null,
+          "exit": {
+            "type": "SELL",
+            "price": 198500,
+            "breakdown_level": 201000,
+            "date": "2025-08-12"
+          }
+        },
+        "signal2": {
+          "entry": null
+        }
+      },
+      "breakout_levels": {
+        "high_20": 205000,
+        "low_20": 201000,
+        "high_55": 210000,
+        "low_10": 203000,
+        "low_20_exit": 201000
+      }
+    },
+    {
+      "ticker": "NVDA",
+      "market": "US",
+      "current_price": 875.50,
+      "volume_20_avg": 45200000,
+      "signals": {
+        "signal1": {
+          "entry": {
+            "type": "BUY",
+            "price": 875.50,
+            "breakout_level": 872.00,
+            "date": "2025-08-11",
+            "exit_level": 840.25
+          },
+          "exit": null
+        },
+        "signal2": {
+          "entry": null
+        }
+      },
+      "breakout_levels": {
+        "high_20": 872.00,
+        "low_20": 820.30,
+        "high_55": 925.80,
+        "low_10": 840.25,
+        "low_20_exit": 820.30
+      }
+    }
+  ]
+}

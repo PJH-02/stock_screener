@@ -1,0 +1,156 @@
+<!-- File: public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Extended Turtle Trading screener for KRX and US stocks - Detect breakout signals and trend following opportunities">
+    <title>Turtle Trading Stock Screener</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <h1 class="title">
+                    <span class="title-icon">🐢</span>
+                    Turtle Trading Screener
+                </h1>
+                <p class="subtitle">Extended Turtle Trading signals for KRX & US markets</p>
+                <div class="header-controls">
+                    <button id="themeToggle" class="theme-toggle" aria-label="Toggle dark mode">
+                        <span class="theme-icon">🌙</span>
+                    </button>
+                    <button id="refreshBtn" class="refresh-btn" aria-label="Refresh data">
+                        <span class="refresh-icon">🔄</span>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="main">
+            <!-- Loading State -->
+            <div id="loading" class="loading" role="status" aria-live="polite">
+                <div class="loading-spinner"></div>
+                <p>Analyzing market data...</p>
+            </div>
+
+            <!-- Error State -->
+            <div id="error" class="error hidden" role="alert">
+                <div class="error-content">
+                    <span class="error-icon">⚠️</span>
+                    <div>
+                        <h3>Unable to load data</h3>
+                        <p id="errorMessage">Please try again later</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Summary -->
+            <section id="stats" class="stats hidden">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Total Analyzed</h3>
+                        <span id="totalAnalyzed" class="stat-value">0</span>
+                        <small class="stat-detail">KRX + US stocks</small>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Signal 1 (20d)</h3>
+                        <span id="signal1Count" class="stat-value">0</span>
+                        <small class="stat-detail">Breakout signals</small>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Signal 2 (55d)</h3>
+                        <span id="signal2Count" class="stat-value">0</span>
+                        <small class="stat-detail">Long-term signals</small>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Success Rate</h3>
+                        <span id="successRate" class="stat-value">0%</span>
+                        <small class="stat-detail">Processing success</small>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Last Updated</h3>
+                        <span id="lastUpdated" class="stat-value">--</span>
+                        <small class="stat-detail">Market time</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section id="results" class="results hidden">
+                <div class="results-header">
+                    <h2>Turtle Trading Signals</h2>
+                    <div class="results-info">
+                        <span class="info-icon">ℹ️</span>
+                        <span>Signal 1: 20-day breakouts | Signal 2: 55-day breakouts with trend exits</span>
+                    </div>
+                </div>
+                
+                <div id="stocksList" class="stocks-list">
+                    <!-- Stock cards will be populated here -->
+                </div>
+            </section>
+
+            <!-- Empty State -->
+            <section id="emptyState" class="empty-state hidden">
+                <div class="empty-content">
+                    <span class="empty-icon">🐢</span>
+                    <h3>No Turtle Trading Signals Found</h3>
+                    <p>Currently monitoring KRX and US stocks for breakout patterns. Check back during active market periods for trading signals.</p>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <div class="footer-content">
+                <p class="disclaimer">
+                    <strong>Disclaimer:</strong> This tool is for educational purposes only. 
+                    Not financial advice. Always do your own research before making investment decisions.
+                </p>
+                <div class="footer-links">
+                    <span>Updates every 15 minutes during market hours</span>
+                    <span>•</span>
+                    <a href="#about" onclick="showAbout()">About</a>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- About Modal -->
+    <div id="aboutModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>About Turtle Trading Screener</h3>
+                <button class="modal-close" onclick="hideAbout()" aria-label="Close modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h4>What is Turtle Trading?</h4>
+                <p>The Turtle Trading system is a trend-following strategy that uses breakout signals to identify potential trading opportunities. This screener implements an extended version with two signal types.</p>
+                
+                <h4>Signal Types</h4>
+                <ul>
+                    <li><strong>Signal 1 (20-day):</strong> Buy when price breaks above 20-day high, sell when below 20-day low. Exit long positions when price falls below 10-day low.</li>
+                    <li><strong>Signal 2 (55-day):</strong> Buy when price breaks above 55-day high (11 weeks). Exit when price falls below 20-day low.</li>
+                </ul>
+                
+                <h4>Market Coverage & Filters</h4>
+                <ul>
+                    <li><strong>KRX Stocks:</strong> Korean stocks with price ≥ ₩5,000 and 20-day avg volume ≥ 100,000</li>
+                    <li><strong>US Stocks:</strong> US stocks with price ≥ $5 and 20-day avg volume ≥ 200,000</li>
+                    <li><strong>Data Period:</strong> Uses 200 days of historical data for accurate breakout calculations</li>
+                </ul>
+                
+                <h4>Data & Updates</h4>
+                <p>Data is sourced from Yahoo Finance and updated every 15 minutes during market hours. The screener analyzes both Korean (KRX) and US stock markets simultaneously.</p>
+                
+                <p><strong>Risk Warning:</strong> Turtle Trading is a momentum strategy that can experience extended drawdowns. This tool is for educational purposes only and not financial advice.</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

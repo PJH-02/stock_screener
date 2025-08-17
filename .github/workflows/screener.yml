@@ -1,0 +1,95 @@
+# File: .github/workflows/screener.yml
+
+name: Stock Screener
+
+on:
+  schedule:
+    # Run every 15 minutes during market hours (9:30 AM - 4:00 PM EST, Mon-Fri)
+    - cron: '*/15 14-21 * * 1-5'  # UTC time (EST + 5 hours)
+  workflow_dispatch:  # Allow manual triggers
+  push:
+    branches: [ main ]
+    paths:
+      - 'run_screener.py'
+      - 'tickers.txt'
+      - 'requirements.txt'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  screener:
+    runs-on: ubuntu-latest
+    outputs:
+      results-changed: ${{ steps.check-changes.outputs.changed }}
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Create output directory
+      run: mkdir -p public/data
+    
+    - name: Run stock screener
+      run: python run_screener.py
+      continue-on-error: true
+    
+    - name: Check if results changed
+      id: check-changes
+      run: |
+        if git diff --quiet public/data/screener_results.json; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "No changes in screening results"
+        else
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "Changes detected in screening results"
+        fi
+    
+    - name: Commit and push results
+      if: steps.check-changes.outputs.changed == 'true'
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add public/data/screener_results.json
+        git commit -m "Update screening results - $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        git push
+    
+    - name: Upload Pages artifact
+      if: steps.check-changes.outputs.changed == 'true' || github.event_name == 'push'
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: public/
+
+  deploy:
+    needs: screener
+    if: needs.screener.outputs.results-changed == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
