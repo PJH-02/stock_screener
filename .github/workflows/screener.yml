@@ -1,9 +1,9 @@
 name: Stock Screener
 
 on:
-  schedule:
-    # 5분마다 실행 (빠른 테스트용)
-    - cron: '*/15 * * * *'
+  # schedule:
+  #   # 15분마다 실행 (빠른 테스트용)
+  #   - cron: '*/15 * * * *'
   workflow_dispatch: # 수동 실행 허용
   push:
     branches: [ main ]
