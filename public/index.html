@@ -79,6 +79,45 @@
                 </div>
             </section>
 
+            <!-- Filter Section -->
+            <section id="filters" class="filters hidden">
+                <div class="filters-header">
+                    <h3>Filters</h3>
+                    <button id="clearFilters" class="clear-filters-btn">Clear All</button>
+                </div>
+                <div class="filters-content">
+                    <div class="filter-group">
+                        <label class="filter-label">Market:</label>
+                        <div class="filter-options">
+                            <button class="filter-btn active" data-filter="market" data-value="all">All</button>
+                            <button class="filter-btn" data-filter="market" data-value="KRX">KRX</button>
+                            <button class="filter-btn" data-filter="market" data-value="US">US</button>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Signal Type:</label>
+                        <div class="filter-options">
+                            <button class="filter-btn active" data-filter="signal" data-value="all">All</button>
+                            <button class="filter-btn" data-filter="signal" data-value="signal1">Signal 1</button>
+                            <button class="filter-btn" data-filter="signal" data-value="signal2">Signal 2</button>
+                        </div>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label class="filter-label">Action:</label>
+                        <div class="filter-options">
+                            <button class="filter-btn active" data-filter="action" data-value="all">All</button>
+                            <button class="filter-btn" data-filter="action" data-value="entry">Entry</button>
+                            <button class="filter-btn" data-filter="action" data-value="exit">Exit</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="filter-results">
+                    <span id="filterCount" class="filter-count">Showing all results</span>
+                </div>
+            </section>
+
             <!-- Results Section -->
             <section id="results" class="results hidden">
                 <div class="results-header">
@@ -100,6 +139,15 @@
                     <span class="empty-icon">🐢</span>
                     <h3>No Turtle Trading Signals Found</h3>
                     <p>Currently monitoring KRX and US stocks for breakout patterns. Check back during active market periods for trading signals.</p>
+                </div>
+            </section>
+
+            <!-- No Filter Results State -->
+            <section id="noFilterResults" class="empty-state hidden">
+                <div class="empty-content">
+                    <span class="empty-icon">🔍</span>
+                    <h3>No Results for Current Filters</h3>
+                    <p>Try adjusting your filters or clear all filters to see more results.</p>
                 </div>
             </section>
         </main>
@@ -151,6 +199,4 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
-</body>
-</html>
+    <script>
