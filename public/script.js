@@ -687,6 +687,3 @@ window.addEventListener('offline', () => {
         window.stockScreenerApp.showError('You are currently offline. Data will refresh when connection is restored.');
     }
 });
-    </script>
-</body>
-</html>
