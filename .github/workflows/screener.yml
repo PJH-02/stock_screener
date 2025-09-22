@@ -2,8 +2,10 @@ name: Stock Screener
 
 on:
   schedule:
-    # 30분마다 실행 (작동시간 문제)
-    - cron: '*/30 * * * *'
+    # 국장 종료: 월-금 15:30 KST (06:30 UTC)
+    - cron: '30 6 * * 1-5'
+    # 미장 종료: 월-금 16:00 ET (DST 고려하여 21:00 UTC)
+    - cron: '0 21 * * 1-5'
   workflow_dispatch: # 수동 실행 허용
   push:
     branches: [ main ]
