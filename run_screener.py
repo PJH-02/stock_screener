@@ -3,12 +3,12 @@
 import json
 import os
 import time
+import re
 from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
 from typing import List, Dict, Any, Optional, Tuple
 import logging
-from pykrx import stock
 import FinanceDataReader as fdr
 
 # Configure logging
@@ -16,8 +16,13 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class TurtleTradingScreener:
-    def __init__(self, output_file: str = 'public/data/screener_results.json'):
+    def __init__(
+        self,
+        output_file: str = 'public/data/screener_results.json',
+        krx_classification_file: str = 'stock_classification.csv'
+    ):
         self.output_file = output_file
+        self.krx_classification_file = krx_classification_file
         
         # Liquidity filters (20-day average volume)
         self.krx_min_volume = 100_000  # KRX stocks
@@ -35,6 +40,157 @@ class TurtleTradingScreener:
 
         # KRX name changer
         self.krx_ticker_map = {}
+
+    def _find_column(self, columns: List[str], candidates: List[str]) -> Optional[str]:
+        """Find first matching column name from candidates (case-insensitive)."""
+        lower_map = {col.lower(): col for col in columns}
+        for candidate in candidates:
+            if candidate.lower() in lower_map:
+                return lower_map[candidate.lower()]
+        return None
+
+    def _normalize_krx_code(self, raw_code: Any) -> Optional[str]:
+        """Normalize KRX code to 6-digit numeric string."""
+        if pd.isna(raw_code):
+            return None
+
+        # Handle numeric values that may be parsed as float (e.g., 5930.0)
+        if isinstance(raw_code, float) and raw_code.is_integer():
+            return f"{int(raw_code):06d}"
+
+        raw_str = str(raw_code).strip()
+        if raw_str.endswith(".0") and raw_str[:-2].isdigit():
+            return raw_str[:-2].zfill(6)[-6:]
+
+        code = re.sub(r'[^0-9]', '', raw_str)
+        if not code:
+            return None
+        return code.zfill(6)[-6:]
+
+    def _detect_market_suffix(self, row: pd.Series, market_cols: List[str], code_col: str) -> Optional[str]:
+        """Detect Yahoo suffix (.KS/.KQ) from market value or raw ticker text."""
+        for market_col in market_cols:
+            market_val_raw = str(row.get(market_col, "")).strip()
+            if not market_val_raw:
+                continue
+            market_val = market_val_raw.upper().replace(" ", "")
+
+            kospi_tokens = ("KOSPI", "유가증권", "STK", "MAIN")
+            kosdaq_tokens = ("KOSDAQ", "코스닥", "KSQ")
+
+            if any(token in market_val for token in kospi_tokens):
+                return ".KS"
+            if any(token in market_val for token in kosdaq_tokens):
+                return ".KQ"
+
+        # fallback 1: code column already has suffix
+        code_raw = str(row.get(code_col, "")).strip().upper()
+        if code_raw.endswith(".KS"):
+            return ".KS"
+        if code_raw.endswith(".KQ"):
+            return ".KQ"
+
+        # fallback 2: check other likely ticker columns
+        for col in row.index:
+            col_name = str(col).lower()
+            if any(token in col_name for token in ("ticker", "symbol", "종목", "코드")):
+                val = str(row.get(col, "")).strip().upper()
+                if val.endswith(".KS"):
+                    return ".KS"
+                if val.endswith(".KQ"):
+                    return ".KQ"
+
+        return None
+
+    def _extract_name_from_row(self, row: pd.Series, name_cols: List[str]) -> Optional[str]:
+        """Extract first non-empty stock name from candidate name columns."""
+        for col in name_cols:
+            if col not in row.index:
+                continue
+            val = row.get(col)
+            if pd.notna(val):
+                name = str(val).strip()
+                if name:
+                    return name
+        return None
+
+    def _load_krx_from_classification_csv(self) -> List[str]:
+        """
+        Load KRX tickers from local classification CSV file.
+        Expected to contain KOSPI/KOSDAQ classification and stock code.
+        """
+        if not os.path.exists(self.krx_classification_file):
+            logger.warning(f"KRX classification file not found: {self.krx_classification_file}")
+            return []
+
+        read_errors = []
+        df = None
+        for encoding in ("utf-8-sig", "cp949", "euc-kr"):
+            try:
+                df = pd.read_csv(self.krx_classification_file, encoding=encoding)
+                break
+            except Exception as e:
+                read_errors.append(f"{encoding}: {e}")
+
+        if df is None:
+            logger.error("Failed to read KRX classification CSV. " + " | ".join(read_errors))
+            return []
+
+        if df.empty:
+            logger.warning("KRX classification CSV is empty.")
+            return []
+
+        columns = df.columns.tolist()
+        code_col = columns[0]
+        logger.info(f"Using first CSV column as stock code column: {code_col}")
+
+        name_candidates = ["종목명", "name", "company", "회사명", "한글종목명"]
+        name_col = self._find_column(columns, name_candidates)
+        name_cols = []
+        for col in [name_col, *[c for c in columns if c.lower() in {n.lower() for n in name_candidates}]]:
+            if col and col not in name_cols:
+                name_cols.append(col)
+        market_candidates = [
+            "시장구분", "시장", "market", "Market", "소속부", "시장구분코드", "market_type", "market_gubun"
+        ]
+        market_col = self._find_column(columns, market_candidates)
+        market_cols = []
+        for col in [market_col, *[c for c in columns if c.lower() in {m.lower() for m in market_candidates}]]:
+            if col and col not in market_cols:
+                market_cols.append(col)
+
+        krx_tickers = []
+        mapped_names = 0
+        skipped_unknown_market = 0
+        skipped_invalid_code = 0
+
+        for _, row in df.iterrows():
+            code = self._normalize_krx_code(row.get(code_col))
+            if not code:
+                skipped_invalid_code += 1
+                continue
+
+            suffix = self._detect_market_suffix(row, market_cols, code_col)
+            if not suffix:
+                skipped_unknown_market += 1
+                continue
+
+            full_ticker = f"{code}{suffix}"
+            krx_tickers.append(full_ticker)
+
+            stock_name = self._extract_name_from_row(row, name_cols)
+            if stock_name:
+                self.krx_ticker_map[full_ticker] = stock_name
+                mapped_names += 1
+
+        # Remove duplicates while preserving order
+        unique_tickers = list(dict.fromkeys(krx_tickers))
+        logger.info(
+            f"Loaded {len(unique_tickers)} KRX tickers from {self.krx_classification_file} "
+            f"(name mapped: {mapped_names}, invalid_code_skipped: {skipped_invalid_code}, "
+            f"unknown_market_skipped: {skipped_unknown_market})"
+        )
+        return unique_tickers
         
     def get_ticker_universe(self) -> Tuple[List[str], List[str]]:
         """
@@ -45,37 +201,9 @@ class TurtleTradingScreener:
         """
         logger.info("Building ticker universe from public sources...")
 
-        # KRX (Korean) stocks
-        krx_tickers = []
-        try:
-            logger.info("Fetching KRX tickers (KOSPI, KOSDAQ)...")
-            # Fetching all tickers from KOSPI and KOSDAQ
-            kospi_tickers_raw = stock.get_market_ticker_list(market="KOSPI")
-            kosdaq_tickers_raw = stock.get_market_ticker_list(market="KOSDAQ")
-            
-            # 수정: KOSDAQ 티커 생성 시 올바른 리스트 사용
-            kospi_tickers = [f"{ticker}.KS" for ticker in kospi_tickers_raw]
-            kosdaq_tickers = [f"{ticker}.KQ" for ticker in kosdaq_tickers_raw]  # 수정된 부분
-            krx_tickers = kospi_tickers + kosdaq_tickers
-            logger.info(f"Found {len(krx_tickers)} total KRX tickers.")
-
-            # KRX company name mapping by ticker list
-            logger.info("Building KRX ticker-to-name map...")
-            all_krx_tickers_raw = kospi_tickers_raw + kosdaq_tickers_raw
-            for ticker in kospi_tickers_raw:
-                full_ticker = f"{ticker}.KS"
-                self.krx_ticker_map[full_ticker] = stock.get_market_ticker_name(ticker)
-            for ticker in kosdaq_tickers_raw:
-                full_ticker = f"{ticker}.KQ"
-                self.krx_ticker_map[full_ticker] = stock.get_market_ticker_name(ticker)
-
-            logger.info(f"Found {len(krx_tickers)} total KRX tickers and mapped their names.")
-        except ImportError:
-            logger.error("`pykrx` library is not installed. Please install it using `pip install pykrx` to fetch KRX tickers.")
-            krx_tickers = []
-        except Exception as e:
-            logger.error(f"Could not fetch KRX tickers: {e}")
-            krx_tickers = []
+        # KRX (Korean) stocks from local CSV file
+        logger.info("Fetching KRX tickers from stock classification CSV...")
+        krx_tickers = self._load_krx_from_classification_csv()
 
         # US stocks
         us_tickers = []

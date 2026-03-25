@@ -53,6 +53,7 @@ Your screener will be live at `https://YOUR-USERNAME.github.io/YOUR-REPO-NAME`
 │   └── data/                # Auto-generated results
 │       └── screener_results.json
 ├── run_screener.py          # Extended Turtle Trading engine
+├── stock_classification.csv # KOSPI/KOSDAQ master list (local universe source)
 ├── requirements.txt         # Python dependencies
 └── README.md               # This documentation
 ```
@@ -80,11 +81,9 @@ Your screener will be live at `https://YOUR-USERNAME.github.io/YOUR-REPO-NAME`
 
 ### Stock Universe
 
-**KRX Stocks (25 tickers)**
-- Samsung Electronics, SK Hynix, NAVER, Kakao
-- Major financials: Shinhan, Hana, KB Financial
-- Industrials: LG Chem, Hyundai Motor, POSCO
-- Technology leaders and blue chips
+**KRX Stocks (all listed KOSPI/KOSDAQ in `stock_classification.csv`)**
+- Universe is built from local CSV to avoid pykrx dependency/runtime issues
+- Tickers are normalized to Yahoo format (`.KS` for KOSPI, `.KQ` for KOSDAQ)
 
 **US Stocks (42 tickers)**
 - Mega-cap tech: AAPL, MSFT, GOOGL, AMZN, TSLA, META
@@ -208,7 +207,9 @@ schedule:
 ## 🚨 Troubleshooting
 
 **No signals appearing?**
-- Data processing problems - solve with pykrx + api call time delay
+- Ensure `stock_classification.csv` exists at repository root and contains KOSPI/KOSDAQ classification
+- Ensure the **first CSV column** is the stock code column (e.g., `종목코드`) and includes market info column(s) like `시장구분` (or ticker values with `.KS`/`.KQ` suffix)
+- Check if Yahoo Finance returns data for normalized tickers (`.KS`, `.KQ`)
 - Check during high volatility periods for more breakouts
 
 **Workflow not running?**
@@ -240,6 +241,9 @@ git clone https://github.com/PJH-02/stock_screener.git
 
 # Install dependencies  
 pip install -r requirements.txt
+
+# Ensure KRX universe file exists
+# stock_classification.csv (KOSPI/KOSDAQ master list)
 
 # Test screener locally
 python run_screener.py
