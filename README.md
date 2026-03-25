@@ -208,6 +208,7 @@ schedule:
 
 **No signals appearing?**
 - Ensure `stock_classification.csv` exists at repository root and contains KOSPI/KOSDAQ classification
+- Ensure the **first CSV column** is the stock code column (e.g., `종목코드`) and includes market info column(s) like `시장구분` (or ticker values with `.KS`/`.KQ` suffix)
 - Check if Yahoo Finance returns data for normalized tickers (`.KS`, `.KQ`)
 - Check during high volatility periods for more breakouts
 
