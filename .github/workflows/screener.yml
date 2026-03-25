@@ -33,11 +33,30 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
 
+      - name: Prepare yfinance cache directory
+        run: mkdir -p .cache
+
+      - name: Restore yfinance no-data cache
+        id: yfinance-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/yfinance_no_data_cache.json
+          key: yfinance-no-data-cache-${{ github.run_id }}
+          restore-keys: |
+            yfinance-no-data-cache-
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Run stock screener
         run: python run_screener.py
+
+      - name: Save yfinance no-data cache
+        if: always() && hashFiles('.cache/yfinance_no_data_cache.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/yfinance_no_data_cache.json
+          key: yfinance-no-data-cache-${{ github.run_id }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
